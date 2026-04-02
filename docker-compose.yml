@@ -23,7 +23,7 @@ services:
         - "traefik.enable=true"
         - "traefik.http.routers.osistema-api.rule=Host(`osistema.zioncore.com.br`)"
         - "traefik.http.routers.osistema-api.entrypoints=websecure"
-        - "traefik.http.routers.osistema-api.tls.certresolver=letsencrypt"
+        - "traefik.http.routers.osistema-api.tls.certresolver=letsencryptresolver"
         - "traefik.http.services.osistema-api.loadbalancer.server.port=3000"
         - "traefik.docker.network=network_public"
     depends_on:

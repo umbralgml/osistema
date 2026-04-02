@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import * as SecureStore from 'expo-secure-store';
+import { getItem, setItem, deleteItem } from '../config/storage';
 import api from '../config/api';
 
 interface User {
@@ -12,8 +12,13 @@ interface User {
   totalXp: number;
   title: string;
   streak: number;
+  longestStreak: number;
   objectives: string[];
   attributes?: { type: string; value: number }[];
+  phone?: string;
+  height?: number;
+  weight?: number;
+  age?: number;
 }
 
 interface AuthState {
@@ -28,7 +33,7 @@ interface AuthState {
   refreshProfile: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>((set, get) => ({
+export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   token: null,
   isLoading: true,
@@ -36,24 +41,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   login: async (email, password) => {
     const { data } = await api.post('/auth/login', { email, password });
-    await SecureStore.setItemAsync('token', data.access_token);
+    await setItem('token', data.access_token);
     set({ user: data.user, token: data.access_token, isAuthenticated: true });
   },
 
   register: async (registerData) => {
     const { data } = await api.post('/auth/register', registerData);
-    await SecureStore.setItemAsync('token', data.access_token);
+    await setItem('token', data.access_token);
     set({ user: data.user, token: data.access_token, isAuthenticated: true });
   },
 
   logout: async () => {
-    await SecureStore.deleteItemAsync('token');
+    await deleteItem('token');
     set({ user: null, token: null, isAuthenticated: false });
   },
 
   loadUser: async () => {
     try {
-      const token = await SecureStore.getItemAsync('token');
+      const token = await getItem('token');
       if (token) {
         const { data } = await api.get('/users/me');
         set({ user: data, token, isAuthenticated: true, isLoading: false });
@@ -61,7 +66,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ isLoading: false });
       }
     } catch {
-      await SecureStore.deleteItemAsync('token');
+      await deleteItem('token');
       set({ isLoading: false, isAuthenticated: false });
     }
   },
