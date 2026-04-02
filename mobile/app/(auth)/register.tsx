@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,10 +7,13 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
+  Animated,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useAuthStore } from '../../src/store/authStore';
 import { theme } from '../../src/config/theme';
+import { SystemText } from '../../src/components/SystemText';
+import { sounds } from '../../src/utils/sounds';
 
 const OBJECTIVES = [
   { key: 'fitness', label: 'Treino Fisico' },
@@ -24,6 +27,7 @@ const OBJECTIVES = [
 export default function RegisterScreen() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(false);
   const register = useAuthStore((s) => s.register);
 
   const [form, setForm] = useState({
@@ -38,10 +42,17 @@ export default function RegisterScreen() {
     objectives: [] as string[],
   });
 
+  const stepFade = useRef(new Animated.Value(1)).current;
+  const stepSlide = useRef(new Animated.Value(0)).current;
+  const welcomeOpacity = useRef(new Animated.Value(0)).current;
+  const journeyPulse = useRef(new Animated.Value(1)).current;
+  const objAnims = useRef(OBJECTIVES.map(() => new Animated.Value(0))).current;
+
   const update = (key: string, value: string) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
   const toggleObjective = (key: string) => {
+    sounds.tick();
     setForm((prev) => ({
       ...prev,
       objectives: prev.objectives.includes(key)
@@ -49,6 +60,72 @@ export default function RegisterScreen() {
         : [...prev.objectives, key],
     }));
   };
+
+  // Step transition animation
+  const animateStep = (nextStep: number) => {
+    Animated.parallel([
+      Animated.timing(stepFade, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(stepSlide, {
+        toValue: nextStep > step ? -30 : 30,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setStep(nextStep);
+      stepSlide.setValue(nextStep > step ? 30 : -30);
+      Animated.parallel([
+        Animated.timing(stepFade, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(stepSlide, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    });
+  };
+
+  // Stagger objective chips on step 3
+  useEffect(() => {
+    if (step === 3) {
+      objAnims.forEach((anim) => anim.setValue(0));
+      OBJECTIVES.forEach((_, i) => {
+        setTimeout(() => {
+          Animated.spring(objAnims[i], {
+            toValue: 1,
+            friction: 6,
+            tension: 80,
+            useNativeDriver: true,
+          }).start();
+        }, i * 80);
+      });
+
+      // Journey button pulse
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(journeyPulse, {
+            toValue: 1.05,
+            duration: 1200,
+            useNativeDriver: true,
+          }),
+          Animated.timing(journeyPulse, {
+            toValue: 1,
+            duration: 1200,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      pulse.start();
+      return () => pulse.stop();
+    }
+  }, [step]);
 
   const handleNext = () => {
     if (step === 1) {
@@ -61,7 +138,13 @@ export default function RegisterScreen() {
         return;
       }
     }
-    setStep(step + 1);
+    sounds.tick();
+    animateStep(step + 1);
+  };
+
+  const handleBack = () => {
+    sounds.tick();
+    animateStep(step - 1);
   };
 
   const handleRegister = async () => {
@@ -82,192 +165,281 @@ export default function RegisterScreen() {
         age: form.age ? parseInt(form.age) : undefined,
         objectives: form.objectives,
       });
-      router.replace('/(tabs)/dashboard');
+      sounds.systemBoot();
+      setShowWelcome(true);
+      Animated.timing(welcomeOpacity, {
+        toValue: 1,
+        duration: 400,
+        useNativeDriver: true,
+      }).start();
+      setTimeout(() => {
+        router.replace('/(tabs)/dashboard');
+      }, 3500);
     } catch (err: any) {
+      sounds.warning();
       Alert.alert('Erro', err?.response?.data?.message || 'Erro ao criar conta');
-    } finally {
       setLoading(false);
     }
   };
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      keyboardShouldPersistTaps="handled"
-    >
-      <Text style={styles.title}>CRIAR CONTA</Text>
-      <Text style={styles.stepText}>Passo {step} de 3</Text>
-      <View style={styles.stepBar}>
-        {[1, 2, 3].map((s) => (
-          <View
-            key={s}
-            style={[styles.stepDot, s <= step && styles.stepDotActive]}
+    <View style={styles.outerContainer}>
+      {/* Welcome overlay */}
+      {showWelcome && (
+        <Animated.View style={[styles.welcomeOverlay, { opacity: welcomeOpacity }]}>
+          <SystemText
+            text="PLAYER REGISTERED."
+            speed={50}
+            style={styles.welcomeText}
+            glowColor={theme.colors.primary}
+            onComplete={() => {}}
           />
-        ))}
-      </View>
-
-      {step === 1 && (
-        <View style={styles.form}>
-          <Text style={styles.sectionTitle}>DADOS DE ACESSO</Text>
-          <Text style={styles.label}>USERNAME</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="seu_nome_de_guerreiro"
-            placeholderTextColor={theme.colors.textMuted}
-            value={form.username}
-            onChangeText={(v) => update('username', v)}
-            autoCapitalize="none"
-          />
-          <Text style={styles.label}>EMAIL</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="email@exemplo.com"
-            placeholderTextColor={theme.colors.textMuted}
-            value={form.email}
-            onChangeText={(v) => update('email', v)}
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-          <Text style={styles.label}>SENHA</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Min. 6 caracteres"
-            placeholderTextColor={theme.colors.textMuted}
-            value={form.password}
-            onChangeText={(v) => update('password', v)}
-            secureTextEntry
-          />
-          <TouchableOpacity style={styles.button} onPress={handleNext}>
-            <Text style={styles.buttonText}>PROXIMO</Text>
-          </TouchableOpacity>
-        </View>
+          <View style={{ marginTop: 16 }}>
+            <SystemText
+              text="WELCOME TO THE SYSTEM."
+              speed={50}
+              style={styles.welcomeText}
+              glowColor={theme.colors.xp}
+            />
+          </View>
+        </Animated.View>
       )}
 
-      {step === 2 && (
-        <View style={styles.form}>
-          <Text style={styles.sectionTitle}>DADOS DO JOGADOR</Text>
-          <Text style={styles.label}>NOME COMPLETO</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Seu nome"
-            placeholderTextColor={theme.colors.textMuted}
-            value={form.name}
-            onChangeText={(v) => update('name', v)}
-          />
-          <Text style={styles.label}>TELEFONE</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="(11) 99999-9999"
-            placeholderTextColor={theme.colors.textMuted}
-            value={form.phone}
-            onChangeText={(v) => update('phone', v)}
-            keyboardType="phone-pad"
-          />
-          <View style={styles.row}>
-            <View style={styles.halfField}>
-              <Text style={styles.label}>ALTURA (cm)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="175"
-                placeholderTextColor={theme.colors.textMuted}
-                value={form.height}
-                onChangeText={(v) => update('height', v)}
-                keyboardType="numeric"
-              />
-            </View>
-            <View style={styles.halfField}>
-              <Text style={styles.label}>PESO (kg)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="70"
-                placeholderTextColor={theme.colors.textMuted}
-                value={form.weight}
-                onChangeText={(v) => update('weight', v)}
-                keyboardType="numeric"
-              />
-            </View>
-          </View>
-          <Text style={styles.label}>IDADE</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="25"
-            placeholderTextColor={theme.colors.textMuted}
-            value={form.age}
-            onChangeText={(v) => update('age', v)}
-            keyboardType="numeric"
-          />
-          <View style={styles.rowButtons}>
-            <TouchableOpacity
-              style={styles.buttonSecondary}
-              onPress={() => setStep(1)}
-            >
-              <Text style={styles.buttonSecondaryText}>VOLTAR</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.buttonFlex} onPress={handleNext}>
-              <Text style={styles.buttonText}>PROXIMO</Text>
-            </TouchableOpacity>
-          </View>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+      >
+        <SystemText
+          text="CRIAR CONTA"
+          speed={35}
+          style={styles.title}
+          glowColor={theme.colors.primary}
+        />
+        <Text style={styles.stepText}>Passo {step} de 3</Text>
+        <View style={styles.stepBar}>
+          {[1, 2, 3].map((s) => (
+            <View
+              key={s}
+              style={[styles.stepDot, s <= step && styles.stepDotActive]}
+            />
+          ))}
         </View>
-      )}
 
-      {step === 3 && (
-        <View style={styles.form}>
-          <Text style={styles.sectionTitle}>SEUS OBJETIVOS</Text>
-          <Text style={styles.hint}>
-            Selecione as areas que deseja evoluir
-          </Text>
-          <View style={styles.chips}>
-            {OBJECTIVES.map((obj) => (
-              <TouchableOpacity
-                key={obj.key}
-                style={[
-                  styles.chip,
-                  form.objectives.includes(obj.key) && styles.chipActive,
-                ]}
-                onPress={() => toggleObjective(obj.key)}
-              >
-                <Text
-                  style={[
-                    styles.chipText,
-                    form.objectives.includes(obj.key) && styles.chipTextActive,
-                  ]}
-                >
-                  {obj.label}
-                </Text>
+        <Animated.View
+          style={[
+            styles.stepContainer,
+            {
+              opacity: stepFade,
+              transform: [{ translateX: stepSlide }],
+            },
+          ]}
+        >
+          {step === 1 && (
+            <View style={styles.form}>
+              <SystemText
+                text="DADOS DE ACESSO"
+                speed={30}
+                style={styles.sectionTitle}
+                glowColor={theme.colors.secondary}
+              />
+              <Text style={styles.label}>USERNAME</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="seu_nome_de_guerreiro"
+                placeholderTextColor={theme.colors.textMuted}
+                value={form.username}
+                onChangeText={(v) => update('username', v)}
+                autoCapitalize="none"
+              />
+              <Text style={styles.label}>EMAIL</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="email@exemplo.com"
+                placeholderTextColor={theme.colors.textMuted}
+                value={form.email}
+                onChangeText={(v) => update('email', v)}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+              <Text style={styles.label}>SENHA</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Min. 6 caracteres"
+                placeholderTextColor={theme.colors.textMuted}
+                value={form.password}
+                onChangeText={(v) => update('password', v)}
+                secureTextEntry
+              />
+              <TouchableOpacity style={styles.button} onPress={handleNext}>
+                <Text style={styles.buttonText}>PROXIMO</Text>
               </TouchableOpacity>
-            ))}
-          </View>
-          <View style={styles.rowButtons}>
-            <TouchableOpacity
-              style={styles.buttonSecondary}
-              onPress={() => setStep(2)}
-            >
-              <Text style={styles.buttonSecondaryText}>VOLTAR</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.buttonFlex, loading && styles.buttonDisabled]}
-              onPress={handleRegister}
-              disabled={loading}
-            >
-              <Text style={styles.buttonText}>
-                {loading ? 'CRIANDO...' : 'INICIAR JORNADA'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
+            </View>
+          )}
 
-      <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 24 }}>
-        <Text style={styles.linkText}>
-          Ja tem conta? <Text style={styles.link}>Entrar</Text>
-        </Text>
-      </TouchableOpacity>
-    </ScrollView>
+          {step === 2 && (
+            <View style={styles.form}>
+              <SystemText
+                text="DADOS DO JOGADOR"
+                speed={30}
+                style={styles.sectionTitle}
+                glowColor={theme.colors.secondary}
+              />
+              <Text style={styles.label}>NOME COMPLETO</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Seu nome"
+                placeholderTextColor={theme.colors.textMuted}
+                value={form.name}
+                onChangeText={(v) => update('name', v)}
+              />
+              <Text style={styles.label}>TELEFONE</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="(11) 99999-9999"
+                placeholderTextColor={theme.colors.textMuted}
+                value={form.phone}
+                onChangeText={(v) => update('phone', v)}
+                keyboardType="phone-pad"
+              />
+              <View style={styles.row}>
+                <View style={styles.halfField}>
+                  <Text style={styles.label}>ALTURA (cm)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="175"
+                    placeholderTextColor={theme.colors.textMuted}
+                    value={form.height}
+                    onChangeText={(v) => update('height', v)}
+                    keyboardType="numeric"
+                  />
+                </View>
+                <View style={styles.halfField}>
+                  <Text style={styles.label}>PESO (kg)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="70"
+                    placeholderTextColor={theme.colors.textMuted}
+                    value={form.weight}
+                    onChangeText={(v) => update('weight', v)}
+                    keyboardType="numeric"
+                  />
+                </View>
+              </View>
+              <Text style={styles.label}>IDADE</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="25"
+                placeholderTextColor={theme.colors.textMuted}
+                value={form.age}
+                onChangeText={(v) => update('age', v)}
+                keyboardType="numeric"
+              />
+              <View style={styles.rowButtons}>
+                <TouchableOpacity style={styles.buttonSecondary} onPress={handleBack}>
+                  <Text style={styles.buttonSecondaryText}>VOLTAR</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.buttonFlex} onPress={handleNext}>
+                  <Text style={styles.buttonText}>PROXIMO</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {step === 3 && (
+            <View style={styles.form}>
+              <SystemText
+                text="SEUS OBJETIVOS"
+                speed={30}
+                style={styles.sectionTitle}
+                glowColor={theme.colors.secondary}
+              />
+              <Text style={styles.hint}>
+                Selecione as areas que deseja evoluir
+              </Text>
+              <View style={styles.chips}>
+                {OBJECTIVES.map((obj, i) => (
+                  <Animated.View
+                    key={obj.key}
+                    style={{
+                      opacity: objAnims[i],
+                      transform: [
+                        {
+                          translateY: objAnims[i].interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [20, 0],
+                          }),
+                        },
+                      ],
+                    }}
+                  >
+                    <TouchableOpacity
+                      style={[
+                        styles.chip,
+                        form.objectives.includes(obj.key) && styles.chipActive,
+                      ]}
+                      onPress={() => toggleObjective(obj.key)}
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          form.objectives.includes(obj.key) && styles.chipTextActive,
+                        ]}
+                      >
+                        {obj.label}
+                      </Text>
+                    </TouchableOpacity>
+                  </Animated.View>
+                ))}
+              </View>
+              <View style={styles.rowButtons}>
+                <TouchableOpacity style={styles.buttonSecondary} onPress={handleBack}>
+                  <Text style={styles.buttonSecondaryText}>VOLTAR</Text>
+                </TouchableOpacity>
+                <Animated.View style={[styles.buttonFlexWrapper, { transform: [{ scale: journeyPulse }] }]}>
+                  <TouchableOpacity
+                    style={[styles.buttonFlexEpic, loading && styles.buttonDisabled]}
+                    onPress={handleRegister}
+                    disabled={loading}
+                  >
+                    <Text style={styles.buttonText}>
+                      {loading ? 'CRIANDO...' : 'INICIAR JORNADA'}
+                    </Text>
+                  </TouchableOpacity>
+                </Animated.View>
+              </View>
+            </View>
+          )}
+        </Animated.View>
+
+        <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 24 }}>
+          <Text style={styles.linkText}>
+            Ja tem conta? <Text style={styles.link}>Entrar</Text>
+          </Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  outerContainer: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+  },
+  welcomeOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(10, 10, 26, 0.97)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 100,
+  },
+  welcomeText: {
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: 4,
+    color: theme.colors.text,
+  },
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
@@ -306,7 +478,12 @@ const styles = StyleSheet.create({
   },
   stepDotActive: {
     backgroundColor: theme.colors.primary,
+    shadowColor: theme.colors.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 6,
   },
+  stepContainer: {},
   form: {
     gap: 8,
   },
@@ -362,6 +539,11 @@ const styles = StyleSheet.create({
   chipActive: {
     backgroundColor: theme.colors.primary,
     borderColor: theme.colors.primary,
+    shadowColor: theme.colors.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 4,
   },
   chipText: {
     color: theme.colors.textSecondary,
@@ -384,6 +566,20 @@ const styles = StyleSheet.create({
     borderRadius: theme.borderRadius.md,
     padding: 18,
     alignItems: 'center',
+  },
+  buttonFlexWrapper: {
+    flex: 1,
+  },
+  buttonFlexEpic: {
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.md,
+    padding: 18,
+    alignItems: 'center',
+    shadowColor: theme.colors.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 20,
+    elevation: 10,
   },
   buttonSecondary: {
     borderRadius: theme.borderRadius.md,

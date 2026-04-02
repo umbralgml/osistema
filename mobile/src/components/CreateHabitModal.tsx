@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,9 +10,12 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Animated,
 } from 'react-native';
 import { theme } from '../config/theme';
 import { useHabitsStore } from '../store/habitsStore';
+import { SystemText } from './SystemText';
+import { sounds } from '../utils/sounds';
 
 interface CreateHabitModalProps {
   visible: boolean;
@@ -50,8 +53,57 @@ export function CreateHabitModal({ visible, onClose, onCreated }: CreateHabitMod
   const [loading, setLoading] = useState(false);
   const createHabit = useHabitsStore((s) => s.createHabit);
 
+  const slideAnim = useRef(new Animated.Value(300)).current;
+  const bgOpacity = useRef(new Animated.Value(0)).current;
+  const submitPulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.spring(slideAnim, {
+          toValue: 0,
+          friction: 8,
+          tension: 65,
+          useNativeDriver: true,
+        }),
+        Animated.timing(bgOpacity, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
+
+      // Submit button pulse
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(submitPulse, {
+            toValue: 1.03,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(submitPulse, {
+            toValue: 1,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      pulse.start();
+      return () => pulse.stop();
+    } else {
+      slideAnim.setValue(300);
+      bgOpacity.setValue(0);
+    }
+  }, [visible]);
+
+  const handleChipPress = (setter: (v: string) => void, value: string) => {
+    sounds.tick();
+    setter(value);
+  };
+
   const handleSubmit = async () => {
     if (!name.trim()) return;
+    sounds.systemAlert();
     setLoading(true);
     try {
       await createHabit({ name: name.trim(), description: description.trim(), category, frequency, difficulty });
@@ -68,112 +120,128 @@ export function CreateHabitModal({ visible, onClose, onCreated }: CreateHabitMod
     }
   };
 
+  if (!visible) return null;
+
   return (
-    <Modal visible={visible} animationType="slide" transparent>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.overlay}
-      >
-        <View style={styles.container}>
-          <View style={styles.header}>
-            <Text style={styles.title}>NOVA QUEST</Text>
-            <TouchableOpacity onPress={onClose}>
-              <Text style={styles.closeBtn}>X</Text>
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView showsVerticalScrollIndicator={false} style={styles.scroll}>
-            <Text style={styles.label}>NOME DA QUEST</Text>
-            <TextInput
-              style={styles.input}
-              value={name}
-              onChangeText={setName}
-              placeholder="Ex: Treinar por 1 hora"
-              placeholderTextColor={theme.colors.textMuted}
-            />
-
-            <Text style={styles.label}>DESCRICAO (OPCIONAL)</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              value={description}
-              onChangeText={setDescription}
-              placeholder="Descreva sua quest..."
-              placeholderTextColor={theme.colors.textMuted}
-              multiline
-              numberOfLines={3}
-            />
-
-            <Text style={styles.label}>CATEGORIA</Text>
-            <View style={styles.chipRow}>
-              {CATEGORIES.map((cat) => (
-                <TouchableOpacity
-                  key={cat.value}
-                  style={[styles.chip, category === cat.value && styles.chipActive]}
-                  onPress={() => setCategory(cat.value)}
-                >
-                  <Text
-                    style={[styles.chipText, category === cat.value && styles.chipTextActive]}
-                  >
-                    {cat.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+    <Modal visible={visible} animationType="none" transparent>
+      <Animated.View style={[styles.overlay, { opacity: bgOpacity }]}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardView}
+        >
+          <Animated.View
+            style={[
+              styles.container,
+              { transform: [{ translateY: slideAnim }] },
+            ]}
+          >
+            <View style={styles.header}>
+              <SystemText
+                text="NOVA QUEST"
+                speed={40}
+                style={styles.title}
+                glowColor={theme.colors.primary}
+              />
+              <TouchableOpacity onPress={onClose}>
+                <Text style={styles.closeBtn}>X</Text>
+              </TouchableOpacity>
             </View>
 
-            <Text style={styles.label}>FREQUENCIA</Text>
-            <View style={styles.chipRow}>
-              {FREQUENCIES.map((freq) => (
-                <TouchableOpacity
-                  key={freq.value}
-                  style={[styles.chip, frequency === freq.value && styles.chipActive]}
-                  onPress={() => setFrequency(freq.value)}
-                >
-                  <Text
-                    style={[styles.chipText, frequency === freq.value && styles.chipTextActive]}
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.scroll}>
+              <Text style={styles.label}>NOME DA QUEST</Text>
+              <TextInput
+                style={styles.input}
+                value={name}
+                onChangeText={setName}
+                placeholder="Ex: Treinar por 1 hora"
+                placeholderTextColor={theme.colors.textMuted}
+              />
+
+              <Text style={styles.label}>DESCRICAO (OPCIONAL)</Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                value={description}
+                onChangeText={setDescription}
+                placeholder="Descreva sua quest..."
+                placeholderTextColor={theme.colors.textMuted}
+                multiline
+                numberOfLines={3}
+              />
+
+              <Text style={styles.label}>CATEGORIA</Text>
+              <View style={styles.chipRow}>
+                {CATEGORIES.map((cat) => (
+                  <TouchableOpacity
+                    key={cat.value}
+                    style={[styles.chip, category === cat.value && styles.chipActive]}
+                    onPress={() => handleChipPress(setCategory, cat.value)}
                   >
-                    {freq.label}
+                    <Text
+                      style={[styles.chipText, category === cat.value && styles.chipTextActive]}
+                    >
+                      {cat.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.label}>FREQUENCIA</Text>
+              <View style={styles.chipRow}>
+                {FREQUENCIES.map((freq) => (
+                  <TouchableOpacity
+                    key={freq.value}
+                    style={[styles.chip, frequency === freq.value && styles.chipActive]}
+                    onPress={() => handleChipPress(setFrequency, freq.value)}
+                  >
+                    <Text
+                      style={[styles.chipText, frequency === freq.value && styles.chipTextActive]}
+                    >
+                      {freq.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.label}>DIFICULDADE</Text>
+              <View style={styles.chipRow}>
+                {DIFFICULTIES.map((diff) => (
+                  <TouchableOpacity
+                    key={diff.value}
+                    style={[
+                      styles.chip,
+                      difficulty === diff.value && {
+                        backgroundColor: diff.color + '30',
+                        borderColor: diff.color,
+                      },
+                    ]}
+                    onPress={() => handleChipPress(setDifficulty, diff.value)}
+                  >
+                    <Text
+                      style={[styles.chipText, difficulty === diff.value && { color: diff.color }]}
+                    >
+                      {diff.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Animated.View style={{ transform: [{ scale: submitPulse }] }}>
+                <TouchableOpacity
+                  style={[styles.submitBtn, (!name.trim() || loading) && styles.submitBtnDisabled]}
+                  onPress={handleSubmit}
+                  disabled={!name.trim() || loading}
+                >
+                  <Text style={styles.submitBtnText}>
+                    {loading ? 'CRIANDO...' : 'CRIAR QUEST'}
                   </Text>
                 </TouchableOpacity>
-              ))}
-            </View>
+              </Animated.View>
 
-            <Text style={styles.label}>DIFICULDADE</Text>
-            <View style={styles.chipRow}>
-              {DIFFICULTIES.map((diff) => (
-                <TouchableOpacity
-                  key={diff.value}
-                  style={[
-                    styles.chip,
-                    difficulty === diff.value && {
-                      backgroundColor: diff.color + '30',
-                      borderColor: diff.color,
-                    },
-                  ]}
-                  onPress={() => setDifficulty(diff.value)}
-                >
-                  <Text
-                    style={[styles.chipText, difficulty === diff.value && { color: diff.color }]}
-                  >
-                    {diff.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <TouchableOpacity
-              style={[styles.submitBtn, (!name.trim() || loading) && styles.submitBtnDisabled]}
-              onPress={handleSubmit}
-              disabled={!name.trim() || loading}
-            >
-              <Text style={styles.submitBtnText}>
-                {loading ? 'CRIANDO...' : 'CRIAR QUEST'}
-              </Text>
-            </TouchableOpacity>
-
-            <View style={{ height: 40 }} />
-          </ScrollView>
-        </View>
-      </KeyboardAvoidingView>
+              <View style={{ height: 40 }} />
+            </ScrollView>
+          </Animated.View>
+        </KeyboardAvoidingView>
+      </Animated.View>
     </Modal>
   );
 }
@@ -181,8 +249,12 @@ export function CreateHabitModal({ visible, onClose, onCreated }: CreateHabitMod
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+  },
+  keyboardView: {
+    flex: 1,
+    justifyContent: 'flex-end',
   },
   container: {
     backgroundColor: theme.colors.background,
@@ -193,6 +265,11 @@ const styles = StyleSheet.create({
     borderLeftWidth: 1,
     borderRightWidth: 1,
     borderColor: theme.colors.primary + '40',
+    shadowColor: theme.colors.primary,
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 20,
   },
   header: {
     flexDirection: 'row',
@@ -273,9 +350,15 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 24,
+    shadowColor: theme.colors.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 15,
+    elevation: 8,
   },
   submitBtnDisabled: {
     opacity: 0.4,
+    shadowOpacity: 0,
   },
   submitBtnText: {
     color: '#fff',

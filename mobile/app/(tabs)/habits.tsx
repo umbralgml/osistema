@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,26 +7,87 @@ import {
   RefreshControl,
   TouchableOpacity,
   Alert,
+  Animated,
 } from 'react-native';
 import { useHabitsStore } from '../../src/store/habitsStore';
 import { useAuthStore } from '../../src/store/authStore';
 import { HabitCard } from '../../src/components/HabitCard';
 import { XpGainModal } from '../../src/components/XpGainModal';
 import { CreateHabitModal } from '../../src/components/CreateHabitModal';
+import { SystemText } from '../../src/components/SystemText';
 import { theme } from '../../src/config/theme';
+import { sounds } from '../../src/utils/sounds';
 
 export default function HabitsScreen() {
   const { habits, todayStatus, lastCompletion, fetchHabits, fetchTodayStatus, completeHabit, clearLastCompletion } = useHabitsStore();
   const refreshProfile = useAuthStore((s) => s.refreshProfile);
   const [refreshing, setRefreshing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
+  const [showTitle, setShowTitle] = useState(false);
+
+  const fabBob = useRef(new Animated.Value(0)).current;
+  const fabGlow = useRef(new Animated.Value(0.3)).current;
+  const emptyPulse = useRef(new Animated.Value(0.5)).current;
 
   const loadData = useCallback(async () => {
     await Promise.all([fetchHabits(), fetchTodayStatus()]);
   }, []);
 
   useEffect(() => {
-    loadData();
+    loadData().then(() => {
+      setShowTitle(true);
+    });
+  }, []);
+
+  // FAB floating animation
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(fabBob, {
+          toValue: -6,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fabBob, {
+          toValue: 0,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(fabGlow, {
+          toValue: 0.8,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fabGlow, {
+          toValue: 0.3,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, []);
+
+  // Empty state sword pulse
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(emptyPulse, {
+          toValue: 1,
+          duration: 1200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(emptyPulse, {
+          toValue: 0.5,
+          duration: 1200,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
   }, []);
 
   const onRefresh = async () => {
@@ -40,6 +101,7 @@ export default function HabitsScreen() {
       await completeHabit(habitId);
       await refreshProfile();
     } catch (err: any) {
+      sounds.warning();
       Alert.alert('Erro', err?.response?.data?.message || 'Erro ao completar missao');
     }
   };
@@ -55,18 +117,33 @@ export default function HabitsScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />
         }
       >
-        <Text style={styles.title}>MISSOES</Text>
+        {showTitle && (
+          <SystemText
+            text="MISSOES"
+            speed={40}
+            style={styles.title}
+            glowColor={theme.colors.text}
+          />
+        )}
         <Text style={styles.subtitle}>Complete suas quests diarias para ganhar XP</Text>
 
         {systemHabits.length > 0 && (
           <>
-            <Text style={styles.sectionTitle}>MISSOES DO SISTEMA</Text>
-            {systemHabits.map((habit) => (
+            <View style={styles.sectionTitleContainer}>
+              <SystemText
+                text="MISSOES DO SISTEMA"
+                speed={25}
+                style={styles.sectionTitle}
+                glowColor={theme.colors.secondary}
+              />
+            </View>
+            {systemHabits.map((habit, index) => (
               <HabitCard
                 key={habit.id}
                 habit={habit}
                 completed={!!todayStatus[habit.id]}
                 onComplete={() => handleComplete(habit.id)}
+                delay={index * 50}
               />
             ))}
           </>
@@ -74,13 +151,21 @@ export default function HabitsScreen() {
 
         {userHabits.length > 0 && (
           <>
-            <Text style={styles.sectionTitle}>SUAS MISSOES</Text>
-            {userHabits.map((habit) => (
+            <View style={styles.sectionTitleContainer}>
+              <SystemText
+                text="SUAS MISSOES"
+                speed={25}
+                style={styles.sectionTitle}
+                glowColor={theme.colors.secondary}
+              />
+            </View>
+            {userHabits.map((habit, index) => (
               <HabitCard
                 key={habit.id}
                 habit={habit}
                 completed={!!todayStatus[habit.id]}
                 onComplete={() => handleComplete(habit.id)}
+                delay={(systemHabits.length + index) * 50}
               />
             ))}
           </>
@@ -88,7 +173,9 @@ export default function HabitsScreen() {
 
         {habits.length === 0 && (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>&#x1F5E1;&#xFE0F;</Text>
+            <Animated.Text style={[styles.emptyIcon, { opacity: emptyPulse }]}>
+              &#x1F5E1;&#xFE0F;
+            </Animated.Text>
             <Text style={styles.emptyText}>Nenhuma missao disponivel</Text>
             <Text style={styles.emptyHint}>
               Crie sua primeira missao ou configure seus objetivos
@@ -100,9 +187,30 @@ export default function HabitsScreen() {
       </ScrollView>
 
       {/* FAB */}
-      <TouchableOpacity style={styles.fab} onPress={() => setShowCreate(true)}>
-        <Text style={styles.fabText}>+</Text>
-      </TouchableOpacity>
+      <Animated.View
+        style={[
+          styles.fabContainer,
+          {
+            transform: [{ translateY: fabBob }],
+          },
+        ]}
+      >
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={() => {
+            sounds.tick();
+            setShowCreate(true);
+          }}
+        >
+          <Animated.View
+            style={[
+              styles.fabGlowRing,
+              { opacity: fabGlow },
+            ]}
+          />
+          <Text style={styles.fabText}>+</Text>
+        </TouchableOpacity>
+      </Animated.View>
 
       {/* XP Modal */}
       {lastCompletion && (
@@ -149,13 +257,15 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginBottom: 24,
   },
+  sectionTitleContainer: {
+    marginBottom: 12,
+    marginTop: 8,
+  },
   sectionTitle: {
     fontSize: 12,
     fontWeight: '800',
     color: theme.colors.textSecondary,
     letterSpacing: 2,
-    marginBottom: 12,
-    marginTop: 8,
   },
   emptyState: {
     alignItems: 'center',
@@ -176,10 +286,12 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
   },
-  fab: {
+  fabContainer: {
     position: 'absolute',
     bottom: 24,
     right: 24,
+  },
+  fab: {
     width: 56,
     height: 56,
     borderRadius: 28,
@@ -189,8 +301,21 @@ const styles = StyleSheet.create({
     elevation: 8,
     shadowColor: theme.colors.primary,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    overflow: 'visible',
+  },
+  fabGlowRing: {
+    position: 'absolute',
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    borderWidth: 2,
+    borderColor: theme.colors.primary,
+    shadowColor: theme.colors.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 10,
   },
   fabText: {
     fontSize: 28,

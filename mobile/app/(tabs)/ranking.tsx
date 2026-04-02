@@ -1,14 +1,16 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   RefreshControl,
+  Animated,
 } from 'react-native';
 import { theme } from '../../src/config/theme';
 import api from '../../src/config/api';
 import { useAuthStore } from '../../src/store/authStore';
+import { SystemText } from '../../src/components/SystemText';
 
 interface RankEntry {
   id: string;
@@ -23,7 +25,12 @@ export default function RankingScreen() {
   const [ranking, setRanking] = useState<RankEntry[]>([]);
   const [myRank, setMyRank] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [showTitle, setShowTitle] = useState(false);
   const user = useAuthStore((s) => s.user);
+
+  const rowAnims = useRef<Animated.Value[]>([]).current;
+  const rowSlides = useRef<Animated.Value[]>([]).current;
 
   const loadRanking = useCallback(async () => {
     try {
@@ -37,8 +44,41 @@ export default function RankingScreen() {
   }, []);
 
   useEffect(() => {
-    loadRanking();
+    loadRanking().then(() => {
+      setLoaded(true);
+      setShowTitle(true);
+    });
   }, []);
+
+  // Stagger row animations when loaded
+  useEffect(() => {
+    if (!loaded || ranking.length === 0) return;
+
+    // Initialize anims for each row
+    while (rowAnims.length < ranking.length) {
+      rowAnims.push(new Animated.Value(0));
+      rowSlides.push(new Animated.Value(40));
+    }
+
+    ranking.forEach((_, i) => {
+      setTimeout(() => {
+        if (rowAnims[i]) {
+          Animated.parallel([
+            Animated.timing(rowAnims[i], {
+              toValue: 1,
+              duration: 400,
+              useNativeDriver: true,
+            }),
+            Animated.timing(rowSlides[i], {
+              toValue: 0,
+              duration: 400,
+              useNativeDriver: true,
+            }),
+          ]).start();
+        }
+      }, 600 + i * 60);
+    });
+  }, [loaded, ranking.length]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -68,7 +108,14 @@ export default function RankingScreen() {
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />
       }
     >
-      <Text style={styles.title}>RANKING GLOBAL</Text>
+      {showTitle && (
+        <SystemText
+          text="RANKING GLOBAL"
+          speed={35}
+          style={styles.title}
+          glowColor={theme.colors.text}
+        />
+      )}
       {myRank && (
         <Text style={styles.myRank}>
           Sua posicao: #{myRank}
@@ -79,15 +126,41 @@ export default function RankingScreen() {
         {ranking.map((entry, index) => {
           const rank = index + 1;
           const isMe = entry.id === user?.id;
+          const medalColor = getMedalColor(rank);
+          const animOpacity = rowAnims[index] || new Animated.Value(1);
+          const animSlide = rowSlides[index] || new Animated.Value(0);
+
           return (
-            <View
+            <Animated.View
               key={entry.id}
               style={[
                 styles.rankRow,
                 isMe && styles.rankRowMe,
-                rank <= 3 && styles.rankRowTop,
+                rank <= 3 && [styles.rankRowTop, { borderColor: medalColor + '50' }],
+                {
+                  opacity: animOpacity,
+                  transform: [{ translateY: animSlide }],
+                },
               ]}
             >
+              {/* Top 3 glow */}
+              {rank <= 3 && (
+                <View
+                  style={[
+                    styles.topGlow,
+                    {
+                      shadowColor: medalColor,
+                      borderColor: medalColor + '30',
+                    },
+                  ]}
+                />
+              )}
+
+              {/* Me glow */}
+              {isMe && (
+                <View style={styles.meGlow} />
+              )}
+
               <View style={styles.rankPosition}>
                 <Text
                   style={[
@@ -118,11 +191,11 @@ export default function RankingScreen() {
                 <Text style={styles.rankLevel}>Lv.{entry.level}</Text>
                 <Text style={styles.rankXp}>{entry.totalXp} XP</Text>
               </View>
-            </View>
+            </Animated.View>
           );
         })}
 
-        {ranking.length === 0 && (
+        {ranking.length === 0 && loaded && (
           <View style={styles.emptyState}>
             <Text style={styles.emptyText}>Nenhum jogador no ranking ainda</Text>
           </View>
@@ -154,9 +227,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 4,
     marginBottom: 24,
+    textShadowColor: theme.colors.accent,
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 6,
   },
   list: {
     gap: 8,
+    marginTop: 16,
   },
   rankRow: {
     flexDirection: 'row',
@@ -167,17 +244,38 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
     gap: 12,
+    position: 'relative',
+    overflow: 'hidden',
   },
   rankRowMe: {
-    borderColor: theme.colors.primary,
+    borderColor: theme.colors.primary + '60',
     backgroundColor: theme.colors.surfaceLight,
   },
   rankRowTop: {
-    borderColor: theme.colors.accent + '40',
+    borderWidth: 1,
+  },
+  topGlow: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: theme.borderRadius.md,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 15,
+    elevation: 4,
+    borderWidth: 1,
+  },
+  meGlow: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: theme.borderRadius.md,
+    shadowColor: theme.colors.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 3,
   },
   rankPosition: {
     width: 36,
     alignItems: 'center',
+    zIndex: 1,
   },
   rankNumber: {
     fontSize: 14,
@@ -193,6 +291,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primary + '30',
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 1,
   },
   avatarText: {
     fontSize: 16,
@@ -201,6 +300,7 @@ const styles = StyleSheet.create({
   },
   rankInfo: {
     flex: 1,
+    zIndex: 1,
   },
   rankName: {
     fontSize: 14,
@@ -209,6 +309,9 @@ const styles = StyleSheet.create({
   },
   rankNameMe: {
     color: theme.colors.primaryLight,
+    textShadowColor: theme.colors.primary,
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 6,
   },
   rankTitle: {
     fontSize: 11,
@@ -217,16 +320,23 @@ const styles = StyleSheet.create({
   },
   rankStats: {
     alignItems: 'flex-end',
+    zIndex: 1,
   },
   rankLevel: {
     fontSize: 14,
     fontWeight: '800',
     color: theme.colors.levelUp,
+    textShadowColor: theme.colors.levelUp,
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 4,
   },
   rankXp: {
     fontSize: 11,
     color: theme.colors.xp,
     marginTop: 2,
+    textShadowColor: theme.colors.xp,
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 4,
   },
   emptyState: {
     alignItems: 'center',

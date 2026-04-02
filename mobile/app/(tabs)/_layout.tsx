@@ -1,5 +1,5 @@
 import { Tabs, Redirect } from 'expo-router';
-import { Text } from 'react-native';
+import { Text, View, StyleSheet } from 'react-native';
 import { useAuthStore } from '../../src/store/authStore';
 import { theme } from '../../src/config/theme';
 
@@ -15,11 +15,16 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarStyle: {
           backgroundColor: theme.colors.surface,
-          borderTopColor: theme.colors.border,
+          borderTopColor: theme.colors.primary + '30',
           borderTopWidth: 1,
           height: 64,
           paddingBottom: 8,
           paddingTop: 4,
+          shadowColor: theme.colors.primary,
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.15,
+          shadowRadius: 8,
+          elevation: 10,
         },
         tabBarActiveTintColor: theme.colors.primary,
         tabBarInactiveTintColor: theme.colors.textMuted,
@@ -30,30 +35,72 @@ export default function TabsLayout() {
         name="dashboard"
         options={{
           title: 'HUD',
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 22, color }}>&#x2694;&#xFE0F;</Text>,
+          tabBarIcon: ({ color, focused }) => (
+            <View style={focused ? styles.activeIconContainer : undefined}>
+              <Text style={[styles.icon, { color }, focused && styles.activeIcon]}>
+                &#x2694;&#xFE0F;
+              </Text>
+            </View>
+          ),
         }}
       />
       <Tabs.Screen
         name="habits"
         options={{
           title: 'Quests',
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 22, color }}>&#x1F4DC;</Text>,
+          tabBarIcon: ({ color, focused }) => (
+            <View style={focused ? styles.activeIconContainer : undefined}>
+              <Text style={[styles.icon, { color }, focused && styles.activeIcon]}>
+                &#x1F4DC;
+              </Text>
+            </View>
+          ),
         }}
       />
       <Tabs.Screen
         name="ranking"
         options={{
           title: 'Ranking',
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 22, color }}>&#x1F3C6;</Text>,
+          tabBarIcon: ({ color, focused }) => (
+            <View style={focused ? styles.activeIconContainer : undefined}>
+              <Text style={[styles.icon, { color }, focused && styles.activeIcon]}>
+                &#x1F3C6;
+              </Text>
+            </View>
+          ),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Perfil',
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 22, color }}>&#x1F464;</Text>,
+          tabBarIcon: ({ color, focused }) => (
+            <View style={focused ? styles.activeIconContainer : undefined}>
+              <Text style={[styles.icon, { color }, focused && styles.activeIcon]}>
+                &#x1F464;
+              </Text>
+            </View>
+          ),
         }}
       />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  icon: {
+    fontSize: 22,
+  },
+  activeIcon: {
+    textShadowColor: theme.colors.primary,
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 12,
+  },
+  activeIconContainer: {
+    shadowColor: theme.colors.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+});
