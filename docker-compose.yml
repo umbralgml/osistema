@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  api:
+    image: osistema-api:latest
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=osistema
+      - DB_PASS=osistema_secret
+      - DB_NAME=osistema
+      - JWT_SECRET=osistema-super-secret-key-2024
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    networks:
+      - internal
+      - network_public
+    deploy:
+      replicas: 1
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.osistema-api.rule=Host(`osistema.zioncore.com.br`)"
+        - "traefik.http.routers.osistema-api.entrypoints=websecure"
+        - "traefik.http.routers.osistema-api.tls.certresolver=letsencrypt"
+        - "traefik.http.services.osistema-api.loadbalancer.server.port=3000"
+        - "traefik.docker.network=network_public"
+    depends_on:
+      - postgres
+      - redis
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: osistema
+      POSTGRES_USER: osistema
+      POSTGRES_PASSWORD: osistema_secret
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - internal
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redisdata:/data
+    networks:
+      - internal
+
+volumes:
+  pgdata:
+  redisdata:
+
+networks:
+  internal:
+    driver: overlay
+  network_public:
+    external: true
